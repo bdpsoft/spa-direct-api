@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sender SPA — Direct API with README</title>
+<style>
+  body { font-family: sans-serif; background:#0f172a; color:#e5e7eb; margin:0; }
+  header, footer { padding:1rem; text-align:center; }
+  main { max-width:900px; margin:auto; padding:1rem; }
+  .card { background:#111827; padding:1rem; border-radius:.5rem; margin-bottom:1rem; }
+  input, select, textarea, button { width:100%; margin:.3rem 0; padding:.6rem; border-radius:.4rem; border:1px solid #1f2937; background:#0b1220; color:#e5e7eb; }
+  button { cursor:pointer; }
+  .log { background:#0b1220; padding:.5rem; height:200px; overflow:auto; font-family:monospace; white-space:pre-wrap; }
+  .modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.8); display:flex; align-items:center; justify-content:center; }
+  .modal-content { background:#1f2937; padding:1rem; border-radius:.5rem; width:340px; max-height:90%; overflow:auto; }
+  .modal-content h3 { margin-top:0; }
+  .readme { font-size:.85rem; color:#d1d5db; margin-top:.75rem; }
+  .readme a { color:#22c55e; text-decoration:none; }
+  .readme a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+<header><h1>Slanje poruka direktno na API</h1></header>
+<main>
+  <div class="card">
+    <label>Broj telefona</label>
+    <input id="phone" placeholder="npr. +381601234567" />
+    <label>API</label>
+    <select id="api">
+      <option value="whatsapp">WhatsApp</option>
+      <option value="viber">Viber</option>
+    </select>
+    <label>Poruke (svaka u novom redu)</label>
+    <textarea id="messages" placeholder="Prva poruka\nDruga poruka"></textarea>
+    <button id="sendBtn">Pošalji</button>
+    <button id="openSettings">Podešavanja</button>
+  </div>
+  <div class="card">
+    <h3>Log</h3>
+    <div id="log" class="log"></div>
+  </div>
+</main>
+<footer>© 2025 Direct API SPA</footer>
+
+<!-- Modal za podešavanja -->
+<div id="settingsModal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Podešavanja API-ja</h3>
+    <label>WhatsApp Token</label>
+    <input id="waToken" />
+    <label>WhatsApp Phone Number ID</label>
+    <input id="waPhoneId" />
+    <label>Viber Token</label>
+    <input id="viberToken" />
+    <button id="saveSettings">Sačuvaj</button>
+    <div class="readme">
+      <h4>Kako doći do ključeva?</h4>
+      <p><strong>WhatsApp Cloud API:</strong></p>
+      <ol>
+        <li>Idi na <a href="https://developers.facebook.com/docs/whatsapp/cloud-api" target="_blank">Meta Developers — WhatsApp Cloud API</a></li>
+        <li>Kreiraj aplikaciju i poveži WhatsApp Business nalog</li>
+        <li>Dobij <em>Permanent Access Token</em> i <em>Phone Number ID</em> iz <a href="https://developers.facebook.com/apps/" target="_blank">Meta App Dashboard</a></li>
+      </ol>
+      <p><strong>Viber PA API:</strong></p>
+      <ol>
+        <li>Registruj se na <a href="https://partners.viber.com/" target="_blank">Viber Admin Panel</a></li>
+        <li>Kreiraj Public Account ili Bot</li>
+        <li>Dobij <em>X-Viber-Auth-Token</em> iz podešavanja bota</li>
+      </ol>
+      <p>Unesi ove vrednosti u polja iznad i klikni <strong>Sačuvaj</strong>.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Workers -->
+<template id="whatsup-api">(() => { const ctx=self; async function sendWhatsApp({phone,messages,config}){const base=`https://graph.facebook.com/v17.0/${config.waPhoneId}/messages`;const headers={'Authorization':`Bearer ${config.waToken}`,'Content-Type':'application/json'};let first=await fetch(base,{method:'POST',headers,body:JSON.stringify({messaging_product:'whatsapp',to:phone,text:{body:messages[0]}})});let firstJson=await first.json();if(!first.ok){ctx.postMessage({type:'first-failed',reason:firstJson.error?.message||'unknown'});return;}ctx.postMessage({type:'first-ok'});for(let i=1;i<messages.length;i++){let r=await fetch(base,{method:'POST',headers,body:JSON.stringify({messaging_product:'whatsapp',to:phone,text:{body:messages[i]}})});let j=await r.json();ctx.postMessage({type:r.ok?'send-ok':'send-failed',index:i,reason:j.error?.message||''});}ctx.postMessage({type:'done'});}ctx.onmessage=ev=>sendWhatsApp(ev.data);})();</template>
+<template id="viber-api">(() => { const ctx=self; async function sendViber({phone,messages,config}){const base='https://chatapi.viber.com/pa/send_message';const headers={'X-Viber-Auth-Token':config.viberToken,'Content-Type':'application/json'};let first=await fetch(base,{method:'POST',headers,body:JSON.stringify({receiver:phone,type:'text',text:messages[0]})});let firstJson=await first.json();if(firstJson.status!==0){ctx.postMessage({type:'first-failed',reason:firstJson.status_message||'unknown'});return;}ctx.postMessage({type:'first-ok'});for(let i=1;i<messages.length;i++){let r=await fetch(base,{method:'POST',headers,body:JSON.stringify({receiver:phone,type:'text',text:messages[i]})});let j=await r.json();ctx.postMessage({type:j.status===0?'send-ok':'send-failed',index:i,reason:j.status_message||''});}ctx.postMessage({type:'done'});}ctx.onmessage=ev=>sendViber(ev.data);})();</template>
+
+<script>
+const $=sel=>document.querySelector(sel);const log=msg=>{$('#log').textContent+=msg+'\n';$('#log').scrollTop=$('#log').scrollHeight;};function getConfig(){return JSON.parse(localStorage.getItem('apiConfig')||'{}');}function ensureConfig(){const c=getConfig();if(!c.waToken||!c.waPhoneId||!c.viberToken){$('#settingsModal').style.display='flex';}}$('#saveSettings').onclick=()=>{const cfg={waToken:$('#waToken').value.trim(),waPhoneId:$('#waPhoneId').value.trim(),viberToken:$('#viberToken').value.trim()};localStorage.setItem('apiConfig',JSON.stringify(cfg));$('#settingsModal').style.display='none';};$('#openSettings').onclick=()=>{$('#settingsModal').style.display='flex';};ensureConfig();function getWorker(id){const tpl=document.getElementById(id);const blob=new Blob([tpl.textContent],{type:'application/javascript'});const url=URL.createObjectURL(blob);const w=new Worker(url);w._url=url;return w;}$('#sendBtn').onclick=()=>{const phone=$('#phone').value.trim();const api=$('#api').value;const messages=$('#messages').value.split(/\r?\n/).filter(Boolean);if(!phone||messages.length===0){log('Unesi podatke');return;}const config=getConfig();const tplId=api==='whatsapp'?'whatsup-api':'viber-api';const w=getWorker(tplId);w.onmessage=ev=>{const m=ev.data;if(m.type==='first-failed'){log('✗ Validacija neuspešna: '+m.reason);URL.revokeObjectURL(w._url);w.terminate();}else if(m.type==='first-ok'){log('✓ Validacija uspešna');}else if(m.type==='send-ok'){log('✓ Poslato #'+m.index);}else if(m.type==='send-failed'){log('✗ Greška #'+m.index+': '+m.reason);}else if(m.type==='done'){log('→ Gotovo');URL.revokeObjectURL(w._url);w.terminate();}};w.postMessage({phone,messages,config});};
+</script>
+</body>
+</html>
