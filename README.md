@@ -19,9 +19,7 @@ Single Page Application (SPA) for sending messages directly to **WhatsApp Cloud 
 ```
 spa-direct-api/
 ├── README.md
-├── index.html
-└── assets/
-    └── screenshots/
+└── index.html
 ```
 
 ## 🚀 Setup
